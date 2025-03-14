@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { getLowestPrice, getHighestPrice, getAveragePrice, getEmailNotifType } from "@/lib/utils";
 import { connectToDB } from "@/lib/mongoose";
@@ -7,15 +5,16 @@ import Product from "@/lib/models/product.model";
 import { scraperAmazonProduct } from "@/lib/scraper";
 import { generateEmailBody, sendEmail } from "@/lib/nodemailer";
 
+// Configuration for Vercel Serverless Function
 export const maxDuration = 60; // Max for Hobby plan (60 seconds)
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = "force-dynamic"; // Force dynamic rendering
+export const revalidate = 0; // Disable caching
 
 export async function GET(request: Request) {
   try {
     await connectToDB();
 
-    // Fetch one unscraped product (e.g., oldest unchecked or random)
+    // Fetch one unscraped product
     const product = await Product.findOne({ lastScraped: { $exists: false } })
       .sort({ createdAt: 1 }) // Oldest first
       .limit(1);
@@ -24,7 +23,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "No products left to scrape" });
     }
 
-    // 1. SCRAPE LATEST PRODUCT DETAILS & UPDATE DB
+    // 1. Scrape latest product details & update DB
     const scrapedProduct = await scraperAmazonProduct(product.url);
 
     if (!scrapedProduct) {
@@ -42,17 +41,16 @@ export async function GET(request: Request) {
       lowestPrice: getLowestPrice(updatedPriceHistory),
       highestPrice: getHighestPrice(updatedPriceHistory),
       averagePrice: getAveragePrice(updatedPriceHistory),
-      lastScraped: new Date(), // Mark as scraped
+      lastScraped: new Date(),
     };
 
-    // Update the product in DB
     const updatedProduct = await Product.findOneAndUpdate(
       { url: product.url },
       updatedProductData,
       { new: true }
     );
 
-    // 2. CHECK PRODUCT STATUS & SEND EMAIL
+    // 2. Check product status & send email
     const emailNotifType = getEmailNotifType(scrapedProduct, product);
 
     if (emailNotifType && updatedProduct.users.length > 0) {
